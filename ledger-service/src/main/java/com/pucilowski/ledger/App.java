@@ -1,5 +1,7 @@
 package com.pucilowski.ledger;
 
+import org.jooq.SQLDialect;
+import org.jooq.impl.DSL;
 import spark.Service;
 
 import javax.sql.DataSource;
@@ -10,8 +12,11 @@ public final class App {
 
     public App(DataSource dataSource, int port) {
         Database.migrate(dataSource);
+        var db = DSL.using(dataSource, SQLDialect.POSTGRES);
+
         this.http = Service.ignite().port(port);
         this.http.get("/health", (req, res) -> "OK");
+        new Api(new Accounts(db), new Actions(db)).routes(http);
         this.http.awaitInitialization();
     }
 
