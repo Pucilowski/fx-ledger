@@ -34,6 +34,10 @@ Two services, one repo — split along "who owns what":
 The seam: quotes are signed artifacts the ledger can verify locally, so the
 customer execution path (`/convert`) makes no synchronous cross-service calls.
 
+Around them, deployment topology rather than services: `gateway/` (Caddy — the
+single public entry point) and `console/` (a dependency-free static page the
+gateway serves; the demo console).
+
 ## Stack
 
 Java 21, SparkJava, PostgreSQL, jOOQ, Flyway, HikariCP, Testcontainers.
@@ -41,8 +45,27 @@ Deliberately no application framework: wiring is explicit and visible.
 
 ## Running
 
+The whole system — both services, PostgreSQL, and a demo console behind a
+Caddy gateway:
+
 ```sh
-docker compose up -d           # PostgreSQL on :5433
+docker compose up --build      # then open http://localhost/
+```
+
+The console exercises every endpoint and shows the event stream live: create
+accounts, deposit, get a firm quote (watch it expire), convert, and watch the
+house position go short and the hedger flatten it — the remaining sliver is
+the spread.
+
+The gateway is the single public entry point (`/` console, `/ledger/*`,
+`/fx/*`); the services and database stay on the private network. In a real
+deployment this is where TLS, auth and rate limiting would live — point the
+Caddyfile at a domain and TLS is automatic.
+
+For development:
+
+```sh
+docker compose up postgres     # just the database, on :5433
 ./gradlew test                 # tests (Testcontainers manages its own database)
 ./gradlew :ledger-service:run  # ledger on :8080
 ./gradlew :fx-service:run      # fx on :8081

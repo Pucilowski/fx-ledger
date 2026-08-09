@@ -1,0 +1,17 @@
+# The single public entry point: serves the demo console and routes each
+# service under its own path prefix. The services themselves stay private.
+# For a real deployment, replace :80 with a domain and Caddy handles TLS.
+:80 {
+	handle_path /ledger/* {
+		reverse_proxy ledger:8080
+	}
+
+	handle_path /fx/* {
+		reverse_proxy fx:8081
+	}
+
+	handle {
+		root * /srv/console
+		file_server
+	}
+}

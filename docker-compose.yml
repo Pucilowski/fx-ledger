@@ -1,3 +1,6 @@
+# The whole system: `docker compose up --build`, then open http://localhost/
+# For gradle-based development, `docker compose up postgres` gives just the
+# database on :5433.
 services:
   postgres:
     image: postgres:16
@@ -12,3 +15,47 @@ services:
       interval: 2s
       timeout: 2s
       retries: 15
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  ledger:
+    build:
+      context: .
+      args:
+        MODULE: ledger-service
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/ledger
+      DB_USER: ledger
+      DB_PASSWORD: ledger
+      QUOTE_SECRET: ${QUOTE_SECRET:-dev-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  fx:
+    build:
+      context: .
+      args:
+        MODULE: fx-service
+    environment:
+      LEDGER_URL: http://ledger:8080
+      QUOTE_SECRET: ${QUOTE_SECRET:-dev-secret}
+    depends_on:
+      - ledger
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+    volumes:
+      - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./console:/srv/console:ro
+    depends_on:
+      - ledger
+      - fx
+    restart: unless-stopped
+
+volumes:
+  pgdata:
