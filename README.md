@@ -54,7 +54,7 @@ In order:
 
 1. ~~Accounts + deposits/withdrawals (ledger)~~ done
 2. ~~Transfers with concurrency stress tests (ledger)~~ done
-3. Transactional outbox + publisher/reconciler + live/catch-up event feed (ledger)
+3. ~~Transactional outbox + publisher/reconciler + live/catch-up event feed (ledger)~~ done
 4. FX quotes: multi-provider aggregation, spread, signed quotes, expiry (fx)
 5. Conversions: quote-idempotent atomic execution (ledger)
 6. Position tracking as a stream projection + threshold hedging against

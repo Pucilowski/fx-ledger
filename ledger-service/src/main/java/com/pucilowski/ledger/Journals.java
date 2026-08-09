@@ -73,12 +73,14 @@ public final class Journals {
             }
         }
 
+        var newBalances = new TreeMap<UUID, BigDecimal>();
         for (var delta : deltas.entrySet()) {
             var account = accounts.get(delta.getKey());
             var newBalance = account.balance().add(delta.getValue());
             if (newBalance.signum() < 0 && mustStayNonNegative(account.kind())) {
                 throw new InsufficientFundsException("insufficient funds in account " + account.id());
             }
+            newBalances.put(account.id(), newBalance);
             tx.update(table("account"))
                     .set(field("balance"), newBalance)
                     .where(field("id").eq(account.id()))
@@ -95,6 +97,26 @@ public final class Journals {
             insert = insert.values(UUID.randomUUID(), journalId, entry.accountId(), entry.currency(), entry.amount());
         }
         insert.execute();
+
+        // Model events, in the same transaction as the change they describe.
+        for (var delta : deltas.entrySet()) {
+            var account = accounts.get(delta.getKey());
+            Events.append(tx, journalId, "account", "BalanceChangedEvent", Map.of(
+                    "accountId", account.id().toString(),
+                    "ownerId", account.ownerId().toString(),
+                    "currency", account.currency(),
+                    "balance", newBalances.get(account.id()).toPlainString(),
+                    "delta", delta.getValue().toPlainString(),
+                    "journalId", journalId.toString()));
+        }
+        Events.append(tx, journalId, "transaction", "TransactionCompletedEvent", Map.of(
+                "journalId", journalId.toString(),
+                "type", type,
+                "entries", entries.stream().map(entry -> Map.of(
+                        "accountId", entry.accountId().toString(),
+                        "currency", entry.currency(),
+                        "amount", entry.amount().toPlainString())).toList()));
+        Events.notifyPublisher(tx);
 
         return journalId;
     }

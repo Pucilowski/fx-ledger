@@ -1,22 +1,30 @@
 package com.pucilowski.ledger;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.jooq.DSLContext;
 import spark.Response;
 import spark.Service;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 final class Api {
 
+    private final DSLContext db;
     private final Accounts accounts;
     private final Actions actions;
+    private final EventPublisher publisher;
 
-    Api(Accounts accounts, Actions actions) {
+    Api(DSLContext db, Accounts accounts, Actions actions, EventPublisher publisher) {
+        this.db = db;
         this.accounts = accounts;
         this.actions = actions;
+        this.publisher = publisher;
     }
 
     void routes(Service http) {
@@ -52,6 +60,44 @@ final class Api {
             return created(response, actions.transfer(from, to, amount(body)));
         });
 
+        // Catch-up stream: published events after an offset, in offset order.
+        http.get("/events", (request, response) -> {
+            var after = longParam(request.queryParams("after"), 0);
+            var limit = (int) longParam(request.queryParams("limit"), 100);
+            response.type("application/json");
+            return Json.write(Map.of("events",
+                    Events.after(db, after, limit).stream().map(Api::eventJson).toList()));
+        });
+
+        // Live stream over SSE. A consumer catches up via /events, then
+        // follows here; the offsets let it stitch the two together.
+        http.get("/events/stream", (request, response) -> {
+            var queue = publisher.subscribe();
+            try {
+                var raw = response.raw();
+                raw.setContentType("text/event-stream");
+                raw.setCharacterEncoding("UTF-8");
+                raw.setHeader("Cache-Control", "no-cache");
+                raw.flushBuffer();
+                var out = raw.getOutputStream();
+                while (true) {
+                    var event = queue.poll(15, TimeUnit.SECONDS);
+                    if (event == null) {
+                        out.write(": keep-alive\n\n".getBytes(StandardCharsets.UTF_8));
+                    } else {
+                        out.write(("id: " + event.offset() + "\ndata: " + Json.write(eventJson(event)) + "\n\n")
+                                .getBytes(StandardCharsets.UTF_8));
+                    }
+                    out.flush();
+                }
+            } catch (Exception e) {
+                // subscriber disconnected
+            } finally {
+                publisher.unsubscribe(queue);
+            }
+            return "";
+        });
+
         http.exception(ValidationException.class, (e, request, response) -> fail(response, 400, e));
         http.exception(NotFoundException.class, (e, request, response) -> fail(response, 404, e));
         http.exception(ConflictException.class, (e, request, response) -> fail(response, 409, e));
@@ -68,6 +114,31 @@ final class Api {
         response.status(status);
         response.type("application/json");
         response.body(Json.error(e.getMessage()));
+    }
+
+    private static Map<String, Object> eventJson(Events.Event event) {
+        var json = new LinkedHashMap<String, Object>();
+        json.put("offset", event.offset());
+        json.put("modelType", event.modelType());
+        json.put("eventType", event.eventType());
+        json.put("occurredAt", event.occurredAt().toString());
+        try {
+            json.put("payload", Json.MAPPER.readTree(event.payload()));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+        return json;
+    }
+
+    private static long longParam(String raw, long fallback) {
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            return Long.parseLong(raw);
+        } catch (NumberFormatException e) {
+            throw new ValidationException("expected a number, got " + raw);
+        }
     }
 
     private static Map<String, Object> accountJson(Account account) {

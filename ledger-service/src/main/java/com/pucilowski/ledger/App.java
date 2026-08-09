@@ -9,14 +9,21 @@ import javax.sql.DataSource;
 public final class App {
 
     private final Service http;
+    private final EventPublisher publisher;
 
     public App(DataSource dataSource, int port) {
+        this(dataSource, port, EventPublisher.Config.defaults());
+    }
+
+    public App(DataSource dataSource, int port, EventPublisher.Config publisherConfig) {
         Database.migrate(dataSource);
         var db = DSL.using(dataSource, SQLDialect.POSTGRES);
+        this.publisher = new EventPublisher(db, dataSource, publisherConfig);
+        this.publisher.start();
 
         this.http = Service.ignite().port(port);
         this.http.get("/health", (req, res) -> "OK");
-        new Api(new Accounts(db), new Actions(db)).routes(http);
+        new Api(db, new Accounts(db), new Actions(db), publisher).routes(http);
         this.http.awaitInitialization();
     }
 
@@ -25,6 +32,7 @@ public final class App {
     }
 
     public void stop() {
+        publisher.stop();
         http.stop();
         http.awaitStop();
     }

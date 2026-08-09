@@ -5,6 +5,9 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.flywaydb.core.Flyway;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 
 public final class Database {
 
@@ -24,5 +27,15 @@ public final class Database {
                 .dataSource(dataSource)
                 .load()
                 .migrate();
+    }
+
+    /**
+     * A dedicated, unpooled connection for LISTEN — it is held open
+     * indefinitely, which would starve the pool.
+     */
+    public static Connection listenConnection(DataSource dataSource) throws SQLException {
+        var hikari = (HikariDataSource) dataSource;
+        return DriverManager.getConnection(
+                hikari.getJdbcUrl(), hikari.getUsername(), hikari.getPassword());
     }
 }
