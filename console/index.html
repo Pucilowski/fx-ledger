@@ -65,6 +65,14 @@
     padding: 4px 8px; border-left: 3px solid var(--dim); margin-bottom: 4px;
     background: var(--panel); border-radius: 0 4px 4px 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    cursor: pointer;
+  }
+  #events li.open {
+    white-space: normal;
+  }
+  #events li.open .payload {
+    display: block; white-space: pre-wrap; word-break: break-word;
+    margin-top: 4px; color: var(--text);
   }
   #events .off { color: var(--dim); margin-right: 8px; }
   #events .payload { color: var(--dim); }
@@ -177,8 +185,14 @@
 const $ = id => document.getElementById(id);
 
 /* ---------- state ---------- */
+// crypto.randomUUID needs a secure context (https or localhost); fall back to
+// getRandomValues, which doesn't, so the console also works on plain http.
+const uuid = () => crypto.randomUUID
+  ? crypto.randomUUID()
+  : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, c =>
+      (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16));
 const owner = localStorage.getItem("fxledger.owner")
-  || (localStorage.setItem("fxledger.owner", crypto.randomUUID()),
+  || (localStorage.setItem("fxledger.owner", uuid()),
       localStorage.getItem("fxledger.owner"));
 let accounts = JSON.parse(localStorage.getItem("fxledger.accounts") || "[]");
 let quote = null;
@@ -342,12 +356,20 @@ function connectStream() {
     const event = JSON.parse(message.data);
     const li = document.createElement("li");
     li.className = event.eventType;
-    const payload = JSON.stringify(event.payload);
     li.innerHTML = '<span class="off">' + event.offset + "</span>"
       + '<span class="type">' + event.eventType + "</span> "
       + '<span class="payload"></span>';
-    li.querySelector(".payload").textContent = payload;
-    li.title = payload;
+    const payload = li.querySelector(".payload");
+    const render = () => payload.textContent = li.classList.contains("open")
+        ? JSON.stringify(event.payload, null, 2)
+        : JSON.stringify(event.payload);
+    li.classList.add("open");
+    render();
+    li.title = "click to collapse";
+    li.onclick = () => {
+      li.classList.toggle("open");
+      render();
+    };
     const list = $("events");
     list.prepend(li);
     while (list.children.length > 200) list.lastChild.remove();

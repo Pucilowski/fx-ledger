@@ -1,7 +1,8 @@
 # The single public entry point: serves the demo console and routes each
 # service under its own path prefix. The services themselves stay private.
-# For a real deployment, replace :80 with a domain and Caddy handles TLS.
-:80 {
+# DOMAIN defaults to :80 in compose (plain http, local). Set DOMAIN to a real
+# hostname -> Caddy obtains and renews TLS certificates automatically.
+{$DOMAIN} {
 	handle_path /ledger/* {
 		reverse_proxy ledger:8080
 	}

@@ -28,6 +28,7 @@ services:
       DB_USER: ledger
       DB_PASSWORD: ledger
       QUOTE_SECRET: ${QUOTE_SECRET:-dev-secret}
+      JAVA_TOOL_OPTIONS: -Xmx96m
     depends_on:
       postgres:
         condition: service_healthy
@@ -41,6 +42,7 @@ services:
     environment:
       LEDGER_URL: http://ledger:8080
       QUOTE_SECRET: ${QUOTE_SECRET:-dev-secret}
+      JAVA_TOOL_OPTIONS: -Xmx96m
     depends_on:
       - ledger
     restart: unless-stopped
@@ -49,9 +51,13 @@ services:
     image: caddy:2
     ports:
       - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-:80}
     volumes:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./console:/srv/console:ro
+      - caddy_data:/data
     depends_on:
       - ledger
       - fx
@@ -59,3 +65,4 @@ services:
 
 volumes:
   pgdata:
+  caddy_data:

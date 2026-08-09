@@ -71,6 +71,24 @@ docker compose up postgres     # just the database, on :5433
 ./gradlew :fx-service:run      # fx on :8081
 ```
 
+## Deploying
+
+Any small box with Docker works (~330MB runtime; on 1GB add swap for the
+build). Point an A record at it, then in the repo directory:
+
+```sh
+[ -f .env ] || cat > .env << EOF
+DOMAIN=your.domain.here
+QUOTE_SECRET=$(openssl rand -hex 32)
+EOF
+docker compose up -d --build
+```
+
+Caddy obtains and renews TLS automatically once the DNS record resolves.
+Ports 80 and 443 must be reachable. A non-default QUOTE_SECRET matters even
+for a demo: quotes are bearer instructions to move money, and a known secret
+would let anyone forge them.
+
 ## Status / roadmap
 
 Core flows complete:
