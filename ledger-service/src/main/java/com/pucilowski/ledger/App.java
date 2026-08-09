@@ -5,6 +5,7 @@ import org.jooq.impl.DSL;
 import spark.Service;
 
 import javax.sql.DataSource;
+import java.time.Clock;
 
 public final class App {
 
@@ -23,7 +24,8 @@ public final class App {
 
         this.http = Service.ignite().port(port);
         this.http.get("/health", (req, res) -> "OK");
-        new Api(db, new Accounts(db), new Actions(db), publisher).routes(http);
+        var actions = new Actions(db, env("QUOTE_SECRET", "dev-secret"), Clock.systemUTC());
+        new Api(db, new Accounts(db), actions, publisher).routes(http);
         this.http.awaitInitialization();
     }
 

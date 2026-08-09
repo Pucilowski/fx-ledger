@@ -60,6 +60,28 @@ final class Api {
             return created(response, actions.transfer(from, to, amount(body)));
         });
 
+        http.post("/convert", (request, response) -> {
+            var body = Json.parse(request.body());
+            var quote = Quotes.fromJson(body.get("quote"));
+            var from = bodyUuid(body, "fromAccountId");
+            var to = bodyUuid(body, "toAccountId");
+            return created(response, actions.convert(quote, from, to));
+        });
+
+        http.post("/hedge-settlements", (request, response) -> {
+            var body = Json.parse(request.body());
+            actions.hedgeSettlement(
+                    Json.required(body, "hedgeId"),
+                    Json.required(body, "providerId"),
+                    Json.required(body, "fromCurrency"),
+                    amountField(body, "fromAmount"),
+                    Json.required(body, "toCurrency"),
+                    amountField(body, "toAmount"));
+            response.status(201);
+            response.type("application/json");
+            return Json.write(Map.of("status", "settled"));
+        });
+
         // Catch-up stream: published events after an offset, in offset order.
         http.get("/events", (request, response) -> {
             var after = longParam(request.queryParams("after"), 0);
@@ -102,6 +124,7 @@ final class Api {
         http.exception(NotFoundException.class, (e, request, response) -> fail(response, 404, e));
         http.exception(ConflictException.class, (e, request, response) -> fail(response, 409, e));
         http.exception(InsufficientFundsException.class, (e, request, response) -> fail(response, 422, e));
+        http.exception(QuoteExpiredException.class, (e, request, response) -> fail(response, 422, e));
     }
 
     private static String created(Response response, Account account) {
@@ -151,10 +174,14 @@ final class Api {
     }
 
     private static BigDecimal amount(JsonNode body) {
+        return amountField(body, "amount");
+    }
+
+    private static BigDecimal amountField(JsonNode body, String field) {
         try {
-            return new BigDecimal(Json.required(body, "amount"));
+            return new BigDecimal(Json.required(body, field));
         } catch (NumberFormatException e) {
-            throw new ValidationException("amount must be a decimal number");
+            throw new ValidationException(field + " must be a decimal number");
         }
     }
 

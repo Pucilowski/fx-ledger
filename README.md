@@ -50,12 +50,25 @@ docker compose up -d           # PostgreSQL on :5433
 
 ## Status / roadmap
 
-In order:
+Core flows complete:
 
 1. ~~Accounts + deposits/withdrawals (ledger)~~ done
 2. ~~Transfers with concurrency stress tests (ledger)~~ done
 3. ~~Transactional outbox + publisher/reconciler + live/catch-up event feed (ledger)~~ done
-4. FX quotes: multi-provider aggregation, spread, signed quotes, expiry (fx)
-5. Conversions: quote-idempotent atomic execution (ledger)
-6. Position tracking as a stream projection + threshold hedging against
-   nostro accounts (fx)
+4. ~~FX quotes: multi-provider aggregation, spread, signed quotes, expiry (fx)~~ done
+5. ~~Conversions: quote-idempotent atomic execution (ledger)~~ done
+6. ~~Position tracking as a stream projection + threshold netting/hedging (fx)~~ done
+
+Known simplifications, in rough order of what a real system adds next:
+
+- **Per-provider nostro settlement.** Hedges currently settle house ↔ external
+  world directly; real books route them through per-provider nostro accounts,
+  bringing funding, per-counterparty exposure limits and statement
+  reconciliation with them. The account taxonomy already reserves the kind.
+- **Consumer offset checkpointing.** fx-service rebuilds its position
+  projection by replaying the stream from zero on restart; a checkpoint
+  (offset + snapshot) would bound recovery time.
+- **Authorization holds.** Two-phase balances (available vs settled) for
+  card-style flows.
+- **jOOQ code generation** from the migrations, replacing the string-based DSL.
+- **Multi-instance publisher** (`for update skip locked` on the outbox sweep).

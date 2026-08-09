@@ -32,6 +32,16 @@ public final class Journals {
      * caller does in the same transaction.
      */
     public static UUID post(DSLContext tx, String type, List<Entry> entries) {
+        return post(tx, type, null, entries);
+    }
+
+    /**
+     * As {@link #post(DSLContext, String, List)}, with an idempotency key
+     * recorded on the journal. The key is unique in the schema, so replaying
+     * the same instruction fails the transaction instead of moving money
+     * twice; callers translate that violation into their idempotent response.
+     */
+    public static UUID post(DSLContext tx, String type, String idempotencyKey, List<Entry> entries) {
         if (entries.isEmpty()) {
             throw new IllegalArgumentException("a journal needs entries");
         }
@@ -73,6 +83,14 @@ public final class Journals {
             }
         }
 
+        // The journal row goes in before the balance checks: a replayed
+        // instruction must fail on its idempotency key (it already ran),
+        // not on whatever the balances happen to look like now.
+        var journalId = UUID.randomUUID();
+        tx.insertInto(table("journal"), field("id"), field("type"), field("idempotency_key"))
+                .values(journalId, type, idempotencyKey)
+                .execute();
+
         var newBalances = new TreeMap<UUID, BigDecimal>();
         for (var delta : deltas.entrySet()) {
             var account = accounts.get(delta.getKey());
@@ -86,11 +104,6 @@ public final class Journals {
                     .where(field("id").eq(account.id()))
                     .execute();
         }
-
-        var journalId = UUID.randomUUID();
-        tx.insertInto(table("journal"), field("id"), field("type"))
-                .values(journalId, type)
-                .execute();
         var insert = tx.insertInto(table("journal_entry"),
                 field("id"), field("journal_id"), field("account_id"), field("currency"), field("amount"));
         for (var entry : entries) {
