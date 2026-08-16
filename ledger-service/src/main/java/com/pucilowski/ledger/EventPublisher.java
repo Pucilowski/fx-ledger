@@ -117,19 +117,32 @@ public final class EventPublisher {
         }
     }
 
+    private static final int BATCH = 1000;
+
     /**
      * Assigns stream offsets to all unpublished events, oldest first, then
      * broadcasts them to live subscribers. Idempotent: already-published
      * events are never selected again. Broadcast happens after commit so a
      * live subscriber can never see an event before the catch-up read can.
+     *
+     * Drains in bounded batches, each in its own transaction: after downtime
+     * the backlog can be arbitrarily large, and the recovery path must not
+     * need memory proportional to the outage.
      */
     synchronized void publish() {
+        while (publishBatch() == BATCH) {
+            // full batch: more may be waiting
+        }
+    }
+
+    private int publishBatch() {
         var published = db.transactionResult(cfg -> {
             var tx = cfg.dsl();
             var rows = tx.select()
                     .from(table("event_log"))
                     .where(field("published_offset").isNull())
                     .orderBy(field("id"))
+                    .limit(BATCH)
                     .forUpdate()
                     .fetch();
             if (rows.isEmpty()) {
@@ -161,6 +174,7 @@ public final class EventPublisher {
                 subscriber.offer(event); // a full (stalled) subscriber misses live events
             }                            // and catches up via the offset feed
         }
+        return published.size();
     }
 
     private static void sleepQuietly(long millis) {
