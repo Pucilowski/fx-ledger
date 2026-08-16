@@ -1,5 +1,7 @@
 package com.pucilowski.fx;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -19,6 +21,22 @@ public final class LedgerClient {
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    // Tolerant reader: unknown fields are ignored, so consumers declare
+    // records containing only the fields they actually use, and additive
+    // producer changes never break them. This is the consumer's half of the
+    // event contract — the producer's half is naming and never removing.
+    private static final ObjectMapper TOLERANT = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+
+    /** Deserializes an event payload into a consumer-local record. */
+    public static <T> T payload(LedgerEvent event, Class<T> type) {
+        try {
+            return TOLERANT.treeToValue(event.payload(), type);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("event payload does not fit " + type.getSimpleName(), e);
+        }
+    }
 
     private final HttpClient http = HttpClient.newHttpClient();
     private final String baseUrl;

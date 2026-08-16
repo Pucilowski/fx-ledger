@@ -6,7 +6,6 @@ import org.jooq.exception.IntegrityConstraintViolationException;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.jooq.impl.DSL.field;
@@ -115,14 +114,10 @@ public final class Actions {
                         new Journals.Entry(houseFrom, quote.fromCurrency(), fromAmount),
                         new Journals.Entry(houseTo, quote.toCurrency(), toAmount.negate()),
                         new Journals.Entry(toAccountId, quote.toCurrency(), toAmount)));
-                Events.append(tx, journalId, "conversion", "ConversionCompletedEvent", Map.of(
-                        "journalId", journalId.toString(),
-                        "quoteId", quote.id(),
-                        "ownerId", from.ownerId().toString(),
-                        "fromCurrency", quote.fromCurrency(),
-                        "fromAmount", fromAmount.toPlainString(),
-                        "toCurrency", quote.toCurrency(),
-                        "toAmount", toAmount.toPlainString()));
+                Events.append(tx, journalId, new ModelEvent.ConversionCompletedEvent(
+                        journalId, quote.id(), from.ownerId(),
+                        quote.fromCurrency(), fromAmount,
+                        quote.toCurrency(), toAmount));
                 return Accounts.fetch(tx, fromAccountId);
             });
         } catch (IntegrityConstraintViolationException e) {
@@ -155,14 +150,10 @@ public final class Actions {
                         new Journals.Entry(externalFrom, fromCurrency, fromAmount),
                         new Journals.Entry(externalTo, toCurrency, toAmount.negate()),
                         new Journals.Entry(houseTo, toCurrency, toAmount)));
-                Events.append(tx, journalId, "hedge", "HedgeSettledEvent", Map.of(
-                        "journalId", journalId.toString(),
-                        "hedgeId", hedgeId,
-                        "providerId", providerId,
-                        "fromCurrency", fromCurrency,
-                        "fromAmount", fromAmount.toPlainString(),
-                        "toCurrency", toCurrency,
-                        "toAmount", toAmount.toPlainString()));
+                Events.append(tx, journalId, new ModelEvent.HedgeSettledEvent(
+                        journalId, hedgeId, providerId,
+                        fromCurrency, fromAmount,
+                        toCurrency, toAmount));
             });
         } catch (IntegrityConstraintViolationException e) {
             throw new ConflictException("hedge " + hedgeId + " has already been settled");

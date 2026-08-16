@@ -10,7 +10,7 @@ import java.util.Map;
 public final class App {
 
     private final Service http;
-    private final Hedger hedger;
+    private final EventProcessor processor;
 
     public App(int port) {
         this(port, Config.defaults(), defaultProviders(), Clock.systemUTC());
@@ -22,15 +22,20 @@ public final class App {
         var positions = new Positions(config.houseOwner());
 
         if (config.hedging()) {
-            this.hedger = new Hedger(new LedgerClient(config.ledgerUrl()), panel, positions, config, clock);
-            this.hedger.start();
+            var ledger = new LedgerClient(config.ledgerUrl());
+            var hedger = new Hedger(ledger, panel, positions, config, clock);
+            this.processor = new EventProcessor(ledger, config.pollInterval());
+            this.processor.register(positions);
+            this.processor.register(hedger);
+            this.processor.onCaughtUp(hedger::maybeHedge);
+            this.processor.start();
         } else {
-            this.hedger = null;
+            this.processor = null;
         }
 
         this.http = Service.ignite().port(port);
         this.http.get("/health", (req, res) -> "OK");
-        new Api(quotes, positions, hedger).routes(http);
+        new Api(quotes, positions, processor).routes(http);
         this.http.awaitInitialization();
     }
 
@@ -39,8 +44,8 @@ public final class App {
     }
 
     public void stop() {
-        if (hedger != null) {
-            hedger.stop();
+        if (processor != null) {
+            processor.stop();
         }
         http.stop();
         http.awaitStop();

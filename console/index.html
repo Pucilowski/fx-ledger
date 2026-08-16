@@ -164,8 +164,10 @@
       <h2>House position <span class="hint">(fx-service projection, offset <span id="offset">0</span>)</span></h2>
       <div id="positions"><div class="hint">flat</div></div>
       <div class="hint" style="margin-top:8px">
-        Conversions push the house short; past the threshold the hedger
-        flattens it with one block trade. What remains is the spread.
+        Conversions leave the house long the currency sold, short the currency
+        bought. Past the threshold, the hedger collapses the pair with one
+        block trade &mdash; selling the long to buy back the short. What
+        remains is the spread.
       </div>
     </div>
   </div>

@@ -6,20 +6,25 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
- * The netting loop. Consumes the ledger's event stream, maintains the house
- * position projection, and when the book runs too short in a currency, fires
- * one aggregate hedge that flattens the short by selling the longest
- * currency at the best provider's rate.
+ * The netting policy, and nothing else: when the book runs too short in a
+ * currency, fire one aggregate hedge that flattens the short by selling the
+ * longest currency at the best provider's rate. Consumption mechanics live
+ * in {@link EventProcessor}; this class is called with events it declared
+ * and, once the projection is current, asked whether to act.
  *
  * Customer conversions are never hedged individually — opposite flows cancel
  * on the book, and only the residual net position ever reaches a provider.
- * The threshold is the risk-appetite dial: below it the house carries the
- * exposure and keeps the spread; above it, safety wins.
+ * The threshold is the risk-appetite dial.
  */
-public final class Hedger {
+public final class Hedger implements EventConsumer {
+
+    /** This consumer's slice of HedgeSettledEvent. */
+    record HedgeSettled(String hedgeId) {
+    }
 
     private final LedgerClient ledger;
     private final Providers providers;
@@ -27,13 +32,9 @@ public final class Hedger {
     private final Config config;
     private final Clock clock;
 
-    private volatile boolean running = true;
-    private volatile long offset;
-    private Thread loop;
-
     // At most one hedge in flight: between settling a hedge and consuming its
     // events, the projection still looks over-limit, and without this guard
-    // the loop would fire duplicate hedges at fresh ids — beyond what the
+    // the policy would fire duplicate hedges at fresh ids — beyond what the
     // idempotency key can catch.
     private String pendingHedgeId;
     private Instant pendingSince = Instant.EPOCH;
@@ -47,44 +48,20 @@ public final class Hedger {
         this.clock = clock;
     }
 
-    public void start() {
-        loop = Thread.ofVirtual().name("hedger").start(() -> {
-            while (running) {
-                try {
-                    poll();
-                } catch (Exception e) {
-                    // ledger unreachable — next tick retries
-                }
-                sleepQuietly(config.pollInterval().toMillis());
-            }
-        });
+    @Override
+    public Set<String> eventTypes() {
+        return Set.of("HedgeSettledEvent");
     }
 
-    public void stop() {
-        running = false;
-        if (loop != null) {
-            loop.interrupt();
+    @Override
+    public void on(LedgerClient.LedgerEvent event) {
+        if (LedgerClient.payload(event, HedgeSettled.class).hedgeId().equals(pendingHedgeId)) {
+            pendingHedgeId = null;
         }
     }
 
-    public long offset() {
-        return offset;
-    }
-
-    void poll() throws Exception {
-        var batch = ledger.events(offset, 500);
-        for (var event : batch) {
-            positions.apply(event);
-            if (event.eventType().equals("HedgeSettledEvent")
-                    && event.payload().get("hedgeId").asText().equals(pendingHedgeId)) {
-                pendingHedgeId = null;
-            }
-            offset = event.offset();
-        }
-        maybeHedge();
-    }
-
-    private void maybeHedge() throws Exception {
+    /** Runs only when the projection is caught up to the head of the stream. */
+    void maybeHedge() throws Exception {
         if (pendingHedgeId != null
                 && pendingSince.plus(Duration.ofSeconds(10)).isAfter(clock.instant())) {
             return;
@@ -103,7 +80,7 @@ public final class Hedger {
 
         var best = providers.best(longest, shortest).orElse(null);
         if (best == null) {
-            return; // no liquidity right now; next tick retries
+            return; // no liquidity right now; next pass retries
         }
         var toAmount = shortAmount.setScale(4, RoundingMode.HALF_UP);
         var fromAmount = toAmount.divide(best.rate(), 4, RoundingMode.HALF_UP);
@@ -134,13 +111,5 @@ public final class Hedger {
             }
         }
         return currency;
-    }
-
-    private static void sleepQuietly(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
     }
 }

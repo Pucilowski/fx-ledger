@@ -5,7 +5,6 @@ import org.jooq.DSLContext;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.UUID;
 
@@ -114,21 +113,15 @@ public final class Journals {
         // Model events, in the same transaction as the change they describe.
         for (var delta : deltas.entrySet()) {
             var account = accounts.get(delta.getKey());
-            Events.append(tx, journalId, "account", "BalanceChangedEvent", Map.of(
-                    "accountId", account.id().toString(),
-                    "ownerId", account.ownerId().toString(),
-                    "currency", account.currency(),
-                    "balance", newBalances.get(account.id()).toPlainString(),
-                    "delta", delta.getValue().toPlainString(),
-                    "journalId", journalId.toString()));
+            Events.append(tx, journalId, new ModelEvent.BalanceChangedEvent(
+                    account.id(), account.ownerId(), account.currency(),
+                    newBalances.get(account.id()), delta.getValue(), journalId));
         }
-        Events.append(tx, journalId, "transaction", "TransactionCompletedEvent", Map.of(
-                "journalId", journalId.toString(),
-                "type", type,
-                "entries", entries.stream().map(entry -> Map.of(
-                        "accountId", entry.accountId().toString(),
-                        "currency", entry.currency(),
-                        "amount", entry.amount().toPlainString())).toList()));
+        Events.append(tx, journalId, new ModelEvent.TransactionCompletedEvent(
+                journalId, type,
+                entries.stream()
+                        .map(entry -> new ModelEvent.EntryLine(entry.accountId(), entry.currency(), entry.amount()))
+                        .toList()));
         Events.notifyPublisher(tx);
 
         return journalId;

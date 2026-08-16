@@ -16,12 +16,12 @@ final class Api {
 
     private final Quotes quotes;
     private final Positions positions;
-    private final Hedger hedger;
+    private final EventProcessor processor;
 
-    Api(Quotes quotes, Positions positions, Hedger hedger) {
+    Api(Quotes quotes, Positions positions, EventProcessor processor) {
         this.quotes = quotes;
         this.positions = positions;
-        this.hedger = hedger;
+        this.processor = processor;
     }
 
     void routes(Service http) {
@@ -45,7 +45,7 @@ final class Api {
                     byCurrency.put(currency, amount.toPlainString()));
             return write(Map.of(
                     "positions", byCurrency,
-                    "offset", hedger == null ? 0 : hedger.offset()));
+                    "offset", processor == null ? 0 : processor.offset()));
         });
 
         http.exception(IllegalArgumentException.class, (e, request, response) -> {

@@ -24,10 +24,10 @@ public final class Events {
     }
 
     /** Appends a model event inside the caller's transaction. */
-    static void append(DSLContext tx, UUID journalId, String modelType, String eventType, Object payload) {
+    static void append(DSLContext tx, UUID journalId, ModelEvent event) {
         tx.insertInto(table("event_log"),
                         field("journal_id"), field("model_type"), field("event_type"), field("payload"))
-                .values(journalId, modelType, eventType, JSONB.valueOf(Json.write(payload)))
+                .values(journalId, event.modelType(), event.eventType(), JSONB.valueOf(Json.write(event)))
                 .execute();
     }
 
